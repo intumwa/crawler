@@ -1,15 +1,17 @@
 'use strict';
 
+require('dotenv').config();
+
 const os = require('os');
 const mysql = require('mysql2');
 const util = require('./util.js');
 const fh = require('./filehelper.js');
 const crawler = require('./crawler.js');
 
-const BASE_DIR = '/Users/intumwa/workspace/crawl-files';
+const BASE_DIR = process.env.BASE_DIR;
 const DB_OBJ = { host:'127.0.0.1', user: 'root', password: 'password', database: 'crawl' };
 const BROWSERS = ['chromium', 'chromium-none', 'firefox', 'firefox-none', 'webkit', 'webkit-none'];
-const TIMEOUT = 5 * 1000; // 5 seconds
+const TIMEOUT = 1 * 60 * 1000; // 1 minute
 
 // array of failed URLs
 const failedUrls = [];
@@ -71,8 +73,8 @@ const start = async (b, data) => {
       const promises = [];
       data.map(async item => {
 
-        const website = item.website;
-        const dirObj = item.directory;
+        const website = item.value.website;
+        const dirObj = item.value.directory;
 
         // crawl only if the URL isn't part of the failed URLs
         if (!failedUrls.includes(website.url)) {
@@ -82,7 +84,7 @@ const start = async (b, data) => {
           // if the crawl takes longer than the timeout, the promise will be rejected
           // with an error that will be handled by crawlPromise
           const promise = crawlPromise(website, TIMEOUT, (resolve, reject) => {
-            crawler.visit(website.url, browser, BASE_DIR, dirObj.dir, dirObj.dirName, (err, res) => {
+            crawler.visit(website.url, browser, BASE_DIR, dirObj.dir, dirObj.dirName, TIMEOUT, (err, res) => {
 
               // populate the dirs array
               if (util.searchArray(dirs, website.url).length === 0) dirs.push({ url: website.url, dir: res.dir, dirName: res.dirName });
@@ -93,7 +95,7 @@ const start = async (b, data) => {
           promises.push(promise);
         }
       });
-      await Promise.all(promises).then(async vals => {
+      await Promise.allSettled(promises).then(async vals => {
         console.log('dang', vals);
 
         // push the crawl with another browser
@@ -123,7 +125,7 @@ const getDirInfo = async (websites, callback) => {
     promises.push(promise);
   });
 
-  await Promise.all(promises).then(vals => {
+  await Promise.allSettled(promises).then(vals => {
     callback(null, vals);
   }).catch(re => {
     callback(re, null);
