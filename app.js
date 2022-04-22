@@ -60,7 +60,7 @@ const crawlPromise = (website, timeout, callback) => {
   });
 };
 
-const start = async (b, websites) => {
+const start = async (b, data) => {
   try {
     // if we haven't crawled the sites with all the browsers yet
     // continue the crawl with the last of the remaining browsers
@@ -69,7 +69,10 @@ const start = async (b, websites) => {
       const browser = b.pop();
 
       const promises = [];
-      websites.map(async website => {
+      data.map(async item => {
+
+        const website = item.website;
+        const dirObj = item.directory;
 
         // crawl only if the URL isn't part of the failed URLs
         if (!failedUrls.includes(website.url)) {
@@ -79,7 +82,7 @@ const start = async (b, websites) => {
           // if the crawl takes longer than the timeout, the promise will be rejected
           // with an error that will be handled by crawlPromise
           const promise = crawlPromise(website, TIMEOUT, (resolve, reject) => {
-            crawler.visit(website.url, browser, BASE_DIR, dirs, (err, res) => {
+            crawler.visit(website.url, browser, BASE_DIR, dirObj.dir, dirObj.dirName, (err, res) => {
 
               // populate the dirs array
               if (util.searchArray(dirs, website.url).length === 0) dirs.push({ url: website.url, dir: res.dir, dirName: res.dirName });
@@ -94,12 +97,37 @@ const start = async (b, websites) => {
         console.log('dang', vals);
 
         // push the crawl with another browser
-        await start(b, websites);
+        await start(b, data);
       });
     } else return;
   } catch(e) {
     console.error(e);
   }
+};
+
+const getDirInfo = async (websites, callback) => {
+  // array to keep track of mkdir promises
+  const promises = [];
+
+  await websites.map(async website => {
+
+    const promise = new Promise(async resolve => {
+
+      // dir in which to save the downloaded resources
+      // if the dir does not exist, it will be created
+      await fh.getDir(BASE_DIR, dirs, website.url, async (err, res) => {
+        const dirInfo = { website: website, directory: res };
+        resolve(dirInfo);
+      });
+    });
+    promises.push(promise);
+  });
+
+  await Promise.all(promises).then(vals => {
+    callback(null, vals);
+  }).catch(re => {
+    callback(re, null);
+  });
 };
 
 // calculate the MAX_CONCURRENCY number
@@ -121,8 +149,13 @@ const getRequestCount = async () => {
       // update the url in the database
       // await updateRead(pool, urls);
 
-      // push the urls to be crawled with different browsers
-      await start(b, rows);
+      await getDirInfo(rows, async (err, res) => {
+        if (err) throw err;
+        else {
+          // push the urls to be crawled with different browsers
+          await start(b, res);
+        }
+      });
     })
     .catch(console.log)
     .then( () => con.end());
