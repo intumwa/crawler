@@ -72,10 +72,35 @@ const makeDir = async (BASE_DIR, url) => {
   }
 };
 
+const getDir = async (BASE_DIR, dirs, url, callback) => {
+  try {
+
+    let dir, dirName;
+
+    const existingDir = util.searchArray(dirs, url);
+    if (existingDir.length === 0) {
+      const mkDir = await makeDir(BASE_DIR, url);
+
+      dir = mkDir.dir;
+      dirName = mkDir.dirName;
+
+      dirs.push({ url: url, dir: dir, dirName: dirName });
+    } else {
+      dir = existingDir[0].dir;
+      dirName = existingDir[0].dirName;
+    }
+
+    callback(null, { dir: dir, dirName: dirName });
+  } catch (e) {
+    console.error(e);
+  }
+};
+
 module.exports = {
   formatPath: formatPath,
 	checkDirectory: checkDirectory,
   generateFileName: generateFileName,
   removeFiles: removeFiles,
-  makeDir: makeDir
+  makeDir: makeDir,
+  getDir: getDir
 };

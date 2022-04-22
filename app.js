@@ -24,14 +24,27 @@ const dirs = [];
 
 // keeping track the failed URLs to avoid unnecessary computation
 const crawlFailure = async (website) => {
+
+  // add the failed URL to the list for tracking
   failedUrls.push(website.url);
+
+  // if it exists, get the existing directory
+  // and remove all downloaded files from the URL
+  const existingDir = util.searchArray(dirs, website.url);
+
+  if (existingDir.length > 0) {
+    await fh.removeFiles(existingDir[0].dir, (err, res) => {
+      if (err) console.error(err);
+      else console.log('removed files for failed', website.url);
+    });
+  }
 };
 
 const crawlPromise = (website, timeout, callback) => {
   return new Promise((resolve, reject) => {
     // Set up the timeout
-    const timer = setTimeout(() => {
-      reject(crawlFailure(website));
+    const timer = setTimeout(async () => {
+      reject(await crawlFailure(website));
     }, timeout);
 
     callback(
@@ -47,30 +60,6 @@ const crawlPromise = (website, timeout, callback) => {
   });
 };
 
-const getDir = async (url, numberOfBrowsers, usedBrowsers, callback) => {
-  try {
-
-    let dir, dirName;
-
-    const existingDir = util.searchArray(dirs, url);
-    if (existingDir.length === 0) {
-      const makeDir = await fh.makeDir(BASE_DIR, url);
-
-      dir = makeDir.dir;
-      dirName = makeDir.dirName;
-
-      dirs.push({ url: url, dir: dir, dirName: dirName });
-    } else {
-      dir = existingDir[0].dir;
-      dirName = existingDir[0].dirName;
-    }
-
-    callback(null, { dir: dir, dirName: dirName });
-  } catch (e) {
-    console.error(e);
-  }
-};
-
 const start = async (b, websites) => {
   try {
     // if we haven't crawled the sites with all the browsers yet
@@ -84,27 +73,23 @@ const start = async (b, websites) => {
 
         // crawl only if the URL isn't part of the failed URLs
         if (!failedUrls.includes(website.url)) {
-          // dir in which to save the downloaded resources
-          // if the dir does not exist, it will be created
-          const dirObj = new Promise((resolve, reject) => {
-            getDir(website.url, BROWSERS.length, b.length, (err, res) => {
-              resolve(res);
-            });
-          });
-          promises.push(dirObj);
 
           // the callback on the crawler.visit is important in order
           // to receive the response before we re-run the crawl with another browser
           // if the crawl takes longer than the timeout, the promise will be rejected
           // with an error that will be handled by crawlPromise
           const promise = crawlPromise(website, TIMEOUT, (resolve, reject) => {
-            crawler.visit(website.url, browser, dirObj.dir, dirObj.dirName, (err, res) => {
+            crawler.visit(website.url, browser, BASE_DIR, dirs, (err, res) => {
+
+              // populate the dirs array
+              if (util.searchArray(dirs, website.url).length === 0) dirs.push({ url: website.url, dir: res.dir, dirName: res.dirName });
+
               resolve(res);
             })
           });
           promises.push(promise);
         }
-      })
+      });
       await Promise.all(promises).then(async vals => {
         console.log('dang', vals);
 
