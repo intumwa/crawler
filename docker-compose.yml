@@ -18,7 +18,7 @@ services:
     command: --default-authentication-plugin=mysql_native_password
     restart: always
     volumes:
-      # - ./ua.sql:/docker-entrypoint-initdb.d/dump.sql
+      - ./ua.sql:/docker-entrypoint-initdb.d/dump.sql
       - ../crawl-data:/var/lib/mysql
     environment:
       MYSQL_ROOT_PASSWORD: jeanluc
@@ -35,4 +35,4 @@ services:
       PMA_ARBITRARY: 1
     restart: always
     ports:
-      - 3134:80
+      - 8184:80
