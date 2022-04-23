@@ -12,7 +12,7 @@ const BASE_DIR = process.env.BASE_DIR;
 const DB_OBJ = { host: process.env.DB_HOST, user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 const BROWSERS = ['chromium', 'chromium-none', 'firefox', 'firefox-none', 'webkit', 'webkit-none'];
 const WITNESS_COUNT = 2;
-const TIMEOUT = 2 * 60 * 1000; // 2 minutes
+const TIMEOUT = 5 * 60 * 1000; // 2 minutes
 
 // array of failed URLs
 const failedUrls = [];
@@ -28,11 +28,11 @@ const dirs = [];
 const saveResults = async (results, callback) => {
   const con = mysql.createConnection(DB_OBJ);
 
-  console.log('saving', results[0].url, 'length', results.length);
+  console.log('saving', results[0]?.url, 'length', results?.length);
   if (results?.length === BROWSERS.length * WITNESS_COUNT) {
-    con.promise().query('INSERT INTO crawler (website, url, data, created_at) VALUES (?, ?, ?, ?)', [ results[0].url, results[0].url, JSON.stringify(results), new Date() ])
+    if (results[0]?.url && results.length > 0) con.promise().query('INSERT INTO crawler (website, url, data, created_at) VALUES (?, ?, ?, ?)', [ results[0]?.url, results[0]?.url, JSON.stringify(results), new Date() ])
     .then(async ([rows,fields]) => {
-      console.log(`done saving crawl results ${results[0].url}`);
+      console.log(`done saving crawl results ${results[0]?.url}`);
     })
     .catch(console.log)
     .then( () => con.end());
@@ -54,15 +54,17 @@ const processResults = async (data) => {
   data.map(item => {
     // filter the crawl results and return an array
     // of crawl results for only the current website
-    const websiteAggregate = crawlData?.filter(result => result?.url === item.value.website.url);
-    resultsAggregate.push(websiteAggregate);
-    promises.push(websiteAggregate);
+    const websiteAggregate = crawlData?.filter(result => result?.url === item?.value?.website?.url);
+    if (websiteAggregate?.length > 0) {
+      resultsAggregate.push(websiteAggregate);
+      promises.push(websiteAggregate);
+    }
   });
 
   await Promise.allSettled(promises).then(async vals => {
     console.log();
     vals.map(async val => {
-      await saveResults(val.value);
+      if (val?.value) await saveResults(val?.value);
     });
   });
 };
@@ -71,16 +73,16 @@ const processResults = async (data) => {
 const crawlFailure = async (website) => {
 
   // add the failed URL to the list for tracking
-  failedUrls.push(website.url);
+  if (website?.url) failedUrls.push(website?.url);
 
   // if it exists, get the existing directory
   // and remove all downloaded files from the URL
-  const existingDir = util.searchArray(dirs, website.url);
+  const existingDir = util.searchArray(dirs, website?.url);
 
-  if (existingDir.length > 0) {
-    await fh.removeFiles(existingDir[0].dir, (err, res) => {
+  if (existingDir?.length > 0) {
+    await fh.removeFiles(existingDir[0]?.dir, (err, res) => {
       if (err) console.error(err);
-      else console.log('removed files for failed', website.url);
+      else console.log('removed files for failed', website?.url);
     });
   }
 };
@@ -116,36 +118,38 @@ const start = async (b, data, requestCount) => {
 
       const promises = [];
 
-      data.map(async item => {
+      data?.map(async item => {
 
-        const website = item.value.website;
-        const dirObj = item.value.directory;
+        const website = item?.value?.website;
+        const dirObj = item?.value?.directory;
 
         // crawl only if the URL isn't part of the failed URLs
-        if (!failedUrls.includes(website.url)) {
+        if (!failedUrls?.includes(website?.url)) {
 
           // the callback on the crawler.visit is important in order
           // to receive the response before we re-run the crawl with another browser
           // if the crawl takes longer than the timeout, the promise will be rejected
           // with an error that will be handled by crawlPromise
           const promise = crawlPromise(website, TIMEOUT, (resolve, reject) => {
-            crawler.visit(website.url, browser, BASE_DIR, dirObj.dir, dirObj.dirName, TIMEOUT, (err, res) => {
+            if (website?.url && dirObj?.dir && dirObj?.dirName) {
+              crawler.visit(website?.url, browser, BASE_DIR, dirObj?.dir, dirObj?.dirName, TIMEOUT, (err, res) => {
 
-              // populate the dirs array
-              if (util.searchArray(dirs, website.url).length === 0) {
-                dirs.push({ url: website.url, dir: res.dir, dirName: res.dirName });
-              }
+                // populate the dirs array
+                if (util.searchArray(dirs, website.url).length === 0) {
+                  dirs.push({ url: website?.url, dir: res?.dir, dirName: res?.dirName });
+                }
 
-              resolve(res);
-            })
+                resolve(res);
+              });
+            }
           });
           promises.push(promise);
         }
       });
       await Promise.allSettled(promises).then(async vals => {
         vals.map(val => {
-          console.log('crawl results', val.value.url, val.value.browser);
-          crawlData.push(val.value);
+          console.log('crawl results', val?.value?.url, val?.value?.browser);
+          if (val?.value) crawlData.push(val?.value);
         });
         console.log();
 
@@ -180,13 +184,13 @@ const getDirInfo = async (websites, callback) => {
   // array to keep track of mkdir promises
   const promises = [];
 
-  await websites.map(async website => {
+  await websites?.map(async website => {
 
     const promise = new Promise(async resolve => {
 
       // dir in which to save the downloaded resources
       // if the dir does not exist, it will be created
-      await fh.getDir(BASE_DIR, dirs, website.url, async (err, res) => {
+      if (website?.url) await fh.getDir(BASE_DIR, dirs, website?.url, async (err, res) => {
         const dirInfo = { website: website, directory: res };
         resolve(dirInfo);
       });
@@ -206,9 +210,18 @@ const getRequestCount = async () => {
   return Math.ceil(os.cpus().length * 0.85);
 };
 
+process.on('exit', async () => {
+  require('child_process').spawn(process.argv.shift(), process.argv, {
+    cwd: process.cwd(),
+    detached : true,
+    stdio: 'inherit'
+  });
+});
+
 (async () => {
   try {
     const n = await getRequestCount();
+    console.log(`crawling ${n} URLs every ${TIMEOUT/60000} minutes`);
 
     const con = mysql.createConnection(DB_OBJ);
     con.promise().query('SELECT * FROM website WHERE status = ? AND called = ? ORDER BY RAND() LIMIT ?', [ '0', 0, n ])
@@ -219,7 +232,7 @@ const getRequestCount = async () => {
 
       // update the url in the database
       rows?.map(website => {
-        con.promise().query('UPDATE website SET called = ? WHERE url = ?', [ 1, website.url ]);
+        if (website?.url) con.promise().query('UPDATE website SET called = ? WHERE url = ?', [ 1, website?.url ]);
       });
 
       await getDirInfo(rows, async (err, res) => {
