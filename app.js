@@ -9,9 +9,10 @@ const fh = require('./filehelper.js');
 const crawler = require('./crawler.js');
 
 const BASE_DIR = process.env.BASE_DIR;
-const DB_OBJ = { host:'127.0.0.1', user: 'root', password: 'password', database: 'crawl' };
+const DB_OBJ = { host: process.env.DB_HOST, user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 const BROWSERS = ['chromium', 'chromium-none', 'firefox', 'firefox-none', 'webkit', 'webkit-none'];
-const TIMEOUT = 1 * 60 * 1000; // 1 minute
+const WITNESS_COUNT = 2;
+const TIMEOUT = 2 * 60 * 1000; // 2 minutes
 
 // array of failed URLs
 const failedUrls = [];
@@ -23,6 +24,48 @@ const crawlData = [];
 // this is handy in keeping files for (same URL) different browsers
 // under one directory that is assigned to the crawled URL
 const dirs = [];
+
+const saveResults = async (results, callback) => {
+  const con = mysql.createConnection(DB_OBJ);
+
+  console.log('saving', results[0].url, 'length', results.length);
+  if (results?.length === BROWSERS.length * WITNESS_COUNT) {
+    con.promise().query('INSERT INTO crawler (website, url, data, created_at) VALUES (?, ?, ?, ?)', [ results[0].url, results[0].url, JSON.stringify(results), new Date() ])
+    .then(async ([rows,fields]) => {
+      console.log(`done saving crawl results ${results[0].url}`);
+    })
+    .catch(console.log)
+    .then( () => con.end());
+  } else {
+    await fh.removeFiles(results[0]?.dir, (err, res) => {
+      if (err) console.error(err);
+      else console.log('removed files for failed', results[0]?.url);
+    });
+  }
+
+};
+
+const processResults = async (data) => {
+  const promises = [];
+
+  // array to store all crawl results aggregated for individual websites
+  const resultsAggregate = [];
+
+  data.map(item => {
+    // filter the crawl results and return an array
+    // of crawl results for only the current website
+    const websiteAggregate = crawlData?.filter(result => result?.url === item.value.website.url);
+    resultsAggregate.push(websiteAggregate);
+    promises.push(websiteAggregate);
+  });
+
+  await Promise.allSettled(promises).then(async vals => {
+    console.log();
+    vals.map(async val => {
+      await saveResults(val.value);
+    });
+  });
+};
 
 // keeping track the failed URLs to avoid unnecessary computation
 const crawlFailure = async (website) => {
@@ -62,15 +105,17 @@ const crawlPromise = (website, timeout, callback) => {
   });
 };
 
-const start = async (b, data) => {
+const start = async (b, data, requestCount) => {
   try {
     // if we haven't crawled the sites with all the browsers yet
     // continue the crawl with the last of the remaining browsers
     if (b.length > 0) {
 
+      ++requestCount;
       const browser = b.pop();
 
       const promises = [];
+
       data.map(async item => {
 
         const website = item.value.website;
@@ -87,7 +132,9 @@ const start = async (b, data) => {
             crawler.visit(website.url, browser, BASE_DIR, dirObj.dir, dirObj.dirName, TIMEOUT, (err, res) => {
 
               // populate the dirs array
-              if (util.searchArray(dirs, website.url).length === 0) dirs.push({ url: website.url, dir: res.dir, dirName: res.dirName });
+              if (util.searchArray(dirs, website.url).length === 0) {
+                dirs.push({ url: website.url, dir: res.dir, dirName: res.dirName });
+              }
 
               resolve(res);
             })
@@ -96,10 +143,32 @@ const start = async (b, data) => {
         }
       });
       await Promise.allSettled(promises).then(async vals => {
-        console.log('dang', vals);
+        vals.map(val => {
+          console.log('crawl results', val.value.url, val.value.browser);
+          crawlData.push(val.value);
+        });
+        console.log();
 
-        // push the crawl with another browser
-        await start(b, data);
+        if (b.length === 0 && (crawlData.length <= BROWSERS.length * data.length)) {
+          // creating a shallow copy of the browsers array
+          // so that we can reload the object every time all browsers were used
+          const b = [...BROWSERS];
+
+          console.log();
+          console.log('re-crawling for the witness crawls...');
+          console.log();
+
+          await start(b, data, requestCount);
+        } else {
+          // push the crawl with another browser
+          start(b, data, requestCount);
+        }
+
+        if (requestCount === BROWSERS.length * WITNESS_COUNT) {
+          // if all requests were sent, and all responses received
+          // proceed to processing the crawl results
+          await processResults(data);
+        }
       });
     } else return;
   } catch(e) {
@@ -142,20 +211,22 @@ const getRequestCount = async () => {
     const n = await getRequestCount();
 
     const con = mysql.createConnection(DB_OBJ);
-    con.promise().query("SELECT * FROM website WHERE status = ? AND called = ? ORDER BY RAND() LIMIT ?", [ '0', 0, n ])
+    con.promise().query('SELECT * FROM website WHERE status = ? AND called = ? ORDER BY RAND() LIMIT ?', [ '0', 0, n ])
     .then(async ([rows,fields]) => {
       // creating a shallow copy of the browsers array
       // so that we can reload the object every time all browsers were used
       const b = [...BROWSERS];
 
       // update the url in the database
-      // await updateRead(pool, urls);
+      rows?.map(website => {
+        con.promise().query('UPDATE website SET called = ? WHERE url = ?', [ 1, website.url ]);
+      });
 
       await getDirInfo(rows, async (err, res) => {
         if (err) throw err;
         else {
           // push the urls to be crawled with different browsers
-          await start(b, res);
+          await start(b, res, 0);
         }
       });
     })

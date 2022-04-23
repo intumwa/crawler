@@ -11,6 +11,9 @@ const path = require('path');
 const util = require('./util.js');
 const fh = require('./filehelper.js');
 
+// ignore any rejected TLS certificates
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const secret = 'abcdefg';
 
 const js = [];
@@ -18,19 +21,10 @@ const css = [];
 const jsUrls = [];
 const cssUrls = [];
 
-let URL;
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
-
-const isInternalLink = async (link) => {
-  return (link.charAt(0) !== ''  && link.charAt(0) !== '#' && link.length > 3 && link.includes(URL));
-  // is bigger than 0
-  // does not start with #
-  // can start with just characters (no :// and nothing similar to URL)
-  // must include URL
-};
 
 const scrollFullPage = async (page) => {
   try {
@@ -130,6 +124,8 @@ const saveResource = async (ua, url, type, dir, scripts) => {
         if (res.status === 200) res.text().then(async text => {
           if (text.length > 0) await writeResource(url, res.status, filePath, text, fileName, type);
         });
+      }).catch(error => {
+        throw error;
       });
     } else {
       scripts?.forEach(async text => {
@@ -176,17 +172,16 @@ const getPage = async (ua) => {
   }
 };
 
-const visit = async (url, ua, BASE_DIR, dir, dirName, TIMEOUT, callback) => {
+const visit = async (urn, ua, BASE_DIR, dir, dirName, TIMEOUT, callback) => {
   let playwrightObj;
   try {
 
     // keeping track of how long this crawl will take
     const t0 = performance.now();
 
-    let status;
-    URL = url;
+    let url, status;
 
-    console.log('crawling', url, ua);
+    console.log('crawling', urn, ua);
 
     // array to keep track of all promises in the crawler
     const promises = [];
@@ -221,8 +216,8 @@ const visit = async (url, ua, BASE_DIR, dir, dirName, TIMEOUT, callback) => {
 		});
     promises.push(response);
 
-    // await page.goto(`http://${url}`, { waitUntil: 'load', timeout: 100000 });
-    if (!url.split('://')[1]) url = `http://${url}`;
+    // await page.goto(`http://${url}`, { waitUntil: 'load', timeout: TIMEOUT });
+    if (!urn.split('://')[1]) url = `http://${urn}`;
     await page.goto(url, { waitUntil: 'load', timeout: TIMEOUT });
 
     // get the content of the crawled page
@@ -233,7 +228,12 @@ const visit = async (url, ua, BASE_DIR, dir, dirName, TIMEOUT, callback) => {
     // get all links on the crawled web page
     // and filter them to save only internal links
     const links = await page.evaluate(() => Array.from(document.querySelectorAll('body a'), el => el.href));
-    const urls = links?.filter(isInternalLink);
+
+    // is bigger than 0
+    // does not start with #
+    // can start with just characters (no :// and nothing similar to URL)
+    // must include URL
+    const urls = links?.filter(link => (link.charAt(0) !== ''  && link.charAt(0) !== '#' && link.length > 3 && link.includes(urn)));
     promises.push(urls);
 
     // save the screenshot of the crawled web page
@@ -267,20 +267,15 @@ const visit = async (url, ua, BASE_DIR, dir, dirName, TIMEOUT, callback) => {
 		// // https://developer.mozilla.org/en-US/docs/Web/API/PerformanceNavigationTiming
 		// const loadDuration = window.PerformanceEntry.duration;
 
+    const t1 = performance.now();
+    const crawlTime = t1 - t0;
+
     await Promise.allSettled(promises).then(async vals => {
       let dirObject;
 
-      vals.map(val => {
-        // // get the playwright object so that we close the browser
-        // if (val?.playwright) val?.playwright.browser.close();
-      });
-
       playwrightObj.browser.close();
 
-      const t1 = performance.now();
-      const crawlTime = t1 - t0;
-
-      callback(null, { url: url, browser: ua, crawlTime: crawlTime, pageLoadTime: loadTime, dir: dir, dirName: dirName, html: html, screenshot: screenshot, js: js, css: css, urls: urls });
+      callback(null, { url: urn, browser: ua, crawlTime: crawlTime, pageLoadTime: loadTime, dir: dir, dirName: dirName, html: html, screenshot: screenshot, js: js, css: css, urls: urls });
     });
   } catch (e) {
     console.error(e);
