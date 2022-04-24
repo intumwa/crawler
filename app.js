@@ -33,6 +33,7 @@ const saveResults = async (results, callback) => {
     if (results[0]?.url && results.length > 0) con.promise().query('INSERT INTO crawler (website, url, data, created_at) VALUES (?, ?, ?, ?)', [ results[0]?.url, results[0]?.url, JSON.stringify(results), new Date() ])
     .then(async ([rows,fields]) => {
       console.log(`done saving crawl results ${results[0]?.url}`);
+      process.exit(1);
     })
     .catch(console.log)
     .then( () => con.end());
@@ -40,6 +41,7 @@ const saveResults = async (results, callback) => {
     await fh.removeFiles(results[0]?.dir, (err, res) => {
       if (err) console.error(err);
       else console.log('removed files for failed', results[0]?.url);
+      process.exit(1);
     });
   }
 
@@ -83,6 +85,7 @@ const crawlFailure = async (website) => {
     await fh.removeFiles(existingDir[0]?.dir, (err, res) => {
       if (err) console.error(err);
       else console.log('removed files for failed', website?.url);
+      process.exit(1);
     });
   }
 };
@@ -153,7 +156,7 @@ const start = async (b, data, requestCount) => {
         });
         console.log();
 
-        if (b.length === 0 && (crawlData.length <= BROWSERS.length * data.length)) {
+        if (b.length === 0 && (crawlData.length <= BROWSERS.length * data.length) && requestCount <= (BROWSERS.length * WITNESS_COUNT)) {
           // creating a shallow copy of the browsers array
           // so that we can reload the object every time all browsers were used
           const b = [...BROWSERS];
