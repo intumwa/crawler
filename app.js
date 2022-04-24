@@ -159,7 +159,7 @@ const start = async (b, data, requestCount) => {
           const b = [...BROWSERS];
 
           console.log();
-          console.log('re-crawling for the witness crawls...');
+          console.log('re-crawling for the witness crawls...', requestCount);
           console.log();
 
           await start(b, data, requestCount);
