@@ -12,7 +12,7 @@ const BASE_DIR = process.env.BASE_DIR;
 const DB_OBJ = { host: process.env.DB_HOST, user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME };
 const BROWSERS = ['chromium', 'chromium-none', 'firefox', 'firefox-none', 'webkit', 'webkit-none'];
 const WITNESS_COUNT = 2;
-const TIMEOUT = 5 * 60 * 1000; // 2 minutes
+const TIMEOUT = 2 * 60 * 1000; // 2 minutes
 
 // array of failed URLs
 const failedUrls = [];
@@ -210,17 +210,18 @@ const getRequestCount = async () => {
   return Math.ceil(os.cpus().length * 0.85);
 };
 
-process.on('exit', async () => {
-  require('child_process').spawn(process.argv.shift(), process.argv, {
-    cwd: process.cwd(),
-    detached : true,
-    stdio: 'inherit'
-  });
-});
+// process.on('exit', async () => {
+//   require('child_process').spawn(process.argv.shift(), process.argv, {
+//     cwd: process.cwd(),
+//     detached : true,
+//     stdio: 'inherit'
+//   });
+// });
 
 (async () => {
   try {
-    const n = await getRequestCount();
+    // const n = await getRequestCount();
+    const n = 1;
     console.log(`crawling ${n} URLs every ${TIMEOUT/60000} minutes`);
 
     const con = mysql.createConnection(DB_OBJ);
