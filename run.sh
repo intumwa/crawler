@@ -14,12 +14,4 @@ done
 ## would wait until those are completed
 ## before displaying all done message
 wait
-if pgrep -x "node" > /dev/null
-then
-mv -f  /usr/local/bin/node /usr/local/bin/node.1
-killall  node
-mv -f /usr/local/bin/node.1 /usr/local/bin/node
-which node
-else
-echo "process node no longer exists"
-fi
+echo "All done."
