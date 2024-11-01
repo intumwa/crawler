@@ -4,8 +4,8 @@ docker_func(){
   docker exec crawler_jeanluc sh -c "node app.js"
   sleep 1
 }
-# For loop 20 times
-for i in {1..20}
+# For loop 5 times
+for i in {1..8}
 do
 	docker_func $i & # Put a function in the background
 done

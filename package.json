@@ -5,6 +5,6 @@
     "nilsimsa": "^0.2.7",
     "node-fetch": "^2.6.6",
     "nodejs-base64": "^2.0.0",
-    "playwright": "^1.21.1"
+    "playwright": "1.48.2"
   }
 }
