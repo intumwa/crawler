@@ -1,69 +1,107 @@
-# A reckless guide to getting this crawler to run (after 30 months!)
+# Guide to Running the Crawler (After 30 Months)
 
-Here are possible things to change in the future, as did change between 2022 and 2024.
+This document provides instructions for setting up and running the crawler, incorporating changes that may have occurred between 2022 and 2024.
 
-- MySQL version in `./docker-compose.yml`
-- Playwright version in `./Dockerfile` and `./package.json`
-- Depending on the host PC/server, the number of containers that run in parallel may change in ./run.sh
+## Potential Future Changes
 
-Other than that, I've added `./db.sql` script that is run upon `docker compose --build` and contains the database (MySQL) structure + 100 domain names to crawl. The DB structure can be changed aside before running Docker, especially concerning which or how many domain names to crawl.
+Be aware of the following components that may require updates:
 
-I've found the following handy as I was cleaning and running Docker (back and forth because I had forgotten a lot of details concerning environment/configs --- take this with a grain of salt, or don't):
+- **MySQL Version**: Update the MySQL version in `./docker-compose.yml` as needed.
+- **Playwright Version**: Update the Playwright version in both `./Dockerfile` and `./package.json`.
+- **Parallel Containers**: Depending on the specifications of the host machine or server, you may need to adjust the number of containers running in parallel in `./run.sh`.
 
-```
+## Database Initialization
+
+The `./db.sql` script is executed during `docker compose --build` and initializes the MySQL database structure, including a list of 100 domain names to crawl. You can modify the database structure or change the list of domain names before running Docker, depending on your requirements.
+
+## Cleaning and Building the Docker Environment
+
+If you need to clean up and rebuild the Docker environment, the following commands may be helpful:
+
+```bash
 docker compose down
 docker builder prune
 rm -rf ../crawl-files-exp1
 rm -rf ../crawl-data-exp1
 docker compose up --build
 ```
-I hope this is enough for the next time I'll tinker with the repo 🥴 
 
-Another dump of commands to export data out of containers.
+**Note**: Use these commands carefully, as they will remove existing containers, builder cache, and specified directories. Ensure that you have backups if necessary.
 
-If nothing to worry about:
+## Exporting Data from Containers
 
-```
+### Standard Procedure
+
+To export data from the containers without issues, you can run:
+
+```bash
 docker run --name mysql_recovery \
-  -v /Users/intumwa/workspace/crawl-data-exp1 \
-  -e MYSQL_ROOT_PASSWORD=jeanluc \
+  -v /path/to/your/crawl-data:/var/lib/mysql \
+  -e MYSQL_ROOT_PASSWORD=your_password \
   -p 3307:3306 \
   -d mysql:8.0.34
 ```
 
-If there's trouble:
+This command creates a new Docker container named `mysql_recovery` using the specified MySQL version. Replace `/path/to/your/crawl-data` with the appropriate path to your data directory, and set `MYSQL_ROOT_PASSWORD` to your MySQL root password.
 
-Create `my.cf`:
+### In Case of Issues
 
-```
-[mysqld]
-innodb_force_recovery=1
-```
+If you encounter problems starting the MySQL container due to data corruption or other issues, you can perform the following steps:
 
-Do (if necessarry):
+1. **Create a MySQL Configuration File**
 
-```
-docker stop mysql_recovery
-docker rm mysql_recovery
+   Create a file named `my.cnf` with the following content:
 
-```
+   ```ini
+   [mysqld]
+   innodb_force_recovery=1
+   ```
 
-Then run:
+   This configuration forces InnoDB to start up even if it encounters corruption, allowing you to recover data.
 
-```
-docker run --name mysql_recovery \
-  -v /Users/intumwa/workspace/crawl-data-exp1:/var/lib/mysql \
-  -v /Users/intumwa/workspace/exp1/my.cnf:/etc/mysql/my.cnf \
-  -e MYSQL_ROOT_PASSWORD=jeanluc \
-  -p 3307:3306 \
-  -d mysql:8.0.34
-```
+2. **Stop and Remove Existing Recovery Container (if necessary)**
 
-`docker exec -it mysql_recovery mysql -u root -p` (to check that database `crawl` is there, that its tables and data are there)
+   If a `mysql_recovery` container is already running and causing issues, stop and remove it:
 
-```
-docker exec -it mysql_recovery bash
-mysqldump -u root -p crawl > /home/crawl.sql
-exit
-docker cp mysql_recovery:/home/crawl.sql .
-```
+   ```bash
+   docker stop mysql_recovery
+   docker rm mysql_recovery
+   ```
+
+3. **Run the MySQL Container with Recovery Options**
+
+   Start a new MySQL container with the recovery configuration:
+
+   ```bash
+   docker run --name mysql_recovery \
+     -v /path/to/your/crawl-data:/var/lib/mysql \
+     -v /path/to/your/my.cnf:/etc/mysql/my.cnf \
+     -e MYSQL_ROOT_PASSWORD=your_password \
+     -p 3307:3306 \
+     -d mysql:8.0.34
+   ```
+
+   Replace `/path/to/your/crawl-data` and `/path/to/your/my.cnf` with the appropriate paths.
+
+4. **Verify the Database**
+
+   Connect to the MySQL server inside the container to verify that your database (`crawl`) and its tables are present:
+
+   ```bash
+   docker exec -it mysql_recovery mysql -u root -p
+   ```
+
+   Enter your MySQL root password when prompted.
+
+5. **Export the Database**
+
+   To export the `crawl` database, execute the following commands:
+
+   ```bash
+   docker exec -it mysql_recovery bash
+   mysqldump -u root -p crawl > /home/crawl.sql
+   exit
+   docker cp mysql_recovery:/home/crawl.sql .
+   ```
+
+   This will create a dump of your `crawl` database and copy it to your local machine.
